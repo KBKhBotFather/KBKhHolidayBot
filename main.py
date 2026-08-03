@@ -49,7 +49,7 @@ BACKUP_GROUP_ID = int(os.getenv("BACKUP_GROUP_ID"))
 BD_TZ = pytz.timezone("Asia/Dhaka")
 
 # Conversation States
-NAME, UNIQUE_ID, REASON, DATES, GROUP_NAME, CONFIRM_CANCEL = range(6)
+NAME, UNIQUE_ID, REASON, DATES, GROUP_NAME = range(5)
 
 # Main Buttons
 BTN_APPLY = "ছুটির আবেদন করুন!"
@@ -105,14 +105,12 @@ def get_form_cancel_keyboard():
 
 def parse_date(date_str, today_year):
     date_str = date_str.strip()
-    # Try full date formats (with year)
     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"):
         try:
             return datetime.strptime(date_str, fmt).date()
         except ValueError:
             pass
             
-    # Try short date formats (day/month)
     for fmt in ("%d/%m", "%d-%m", "%d.%m"):
         try:
             dt = datetime.strptime(date_str, fmt)
@@ -138,7 +136,6 @@ async def apply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = get_today_bd()
 
-    # Check active ongoing leave
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
@@ -205,7 +202,6 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return DATES
 
-    # Handle short format crossing year boundary e.g., 28/12 to 05/01
     if end_d < start_d and end_d.year == start_d.year:
         if len(dates[1].replace('.','/').replace('-','/').split('/')) == 2:
             end_d = end_d.replace(year=today_year + 1)
@@ -242,7 +238,6 @@ async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     end_date = context.user_data['end_date']
     days_count = context.user_data['days_count']
 
-    # Database Calculation
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -298,7 +293,7 @@ async def cancel_form_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("আপনার ছুটির আবেদন বাতিল হয়েছে✅", reply_markup=get_main_keyboard())
     return ConversationHandler.END
 
-# Cancel Ongoing Leave Handler (Step 1: Ask Confirmation)
+# Step 1: Ask Confirmation for Ongoing Leave Cancellation
 async def ask_cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = get_today_bd()
@@ -328,7 +323,7 @@ async def ask_cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT
         reply_markup=confirm_keyboard
     )
 
-# Cancel Ongoing Leave Handler (Step 2: Confirm YES)
+# Step 2: Confirm YES
 async def confirm_cancel_yes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = get_today_bd()
@@ -363,7 +358,6 @@ async def confirm_cancel_yes(update: Update, context: ContextTypes.DEFAULT_TYPE)
     cur.execute("SELECT SUM(days_count) as total FROM leaves WHERE user_id = %s;", (user_id,))
     new_total_days = cur.fetchone()['total'] or 0
 
-    cur.execute("UPDATE leaves SET total_days = %s WHERE id = %s;", (active_leave['id'],))
     cur.execute("UPDATE leaves SET total_days = %s WHERE id = %s;", (new_total_days, active_leave['id']))
     conn.commit()
 
@@ -391,7 +385,7 @@ async def confirm_cancel_yes(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         logging.error(f"Backup group notify error: {e}")
 
-# Cancel Ongoing Leave Handler (Step 2: Confirm NO)
+# Step 2: Confirm NO
 async def confirm_cancel_no(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "আপনার চলমান ছুটি অব্যাহত আছে(বাতিল হয়নি)।✅",
@@ -474,7 +468,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
     
-    # Cancel Ongoing Leave Confirmation Handlers
+    # Handlers for Ongoing Leave Cancellation & Confirmation Buttons
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_CANCEL}$"), ask_cancel_ongoing_leave))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_YES}$"), confirm_cancel_yes))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_NO}$"), confirm_cancel_no))
