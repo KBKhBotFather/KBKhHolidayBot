@@ -49,12 +49,17 @@ BACKUP_GROUP_ID = int(os.getenv("BACKUP_GROUP_ID"))
 BD_TZ = pytz.timezone("Asia/Dhaka")
 
 # Conversation States
-NAME, UNIQUE_ID, REASON, DATES, GROUP_NAME = range(5)
+NAME, UNIQUE_ID, REASON, DATES, GROUP_NAME, CONFIRM_CANCEL = range(6)
 
-# Buttons
+# Main Buttons
 BTN_APPLY = "ছুটির আবেদন করুন!"
 BTN_CANCEL = "চলমান ছুটি এখনই বাতিল করুন!"
 BTN_RECEIPT = "সর্বশেষ ছুটির আবেদন Receipt!"
+BTN_CANCEL_FORM = "আবেদন বাতিল করুন ❌"
+
+# Confirmation Buttons
+BTN_YES = "হ্যাঁ✅"
+BTN_NO = "না❌"
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
@@ -89,6 +94,12 @@ def init_db():
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         [[BTN_APPLY], [BTN_CANCEL], [BTN_RECEIPT]],
+        resize_keyboard=True
+    )
+
+def get_form_cancel_keyboard():
+    return ReplyKeyboardMarkup(
+        [[BTN_CANCEL_FORM]],
         resize_keyboard=True
     )
 
@@ -149,24 +160,25 @@ async def apply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "আপনার সংক্ষিপ্ত নাম লিখুন:",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=get_form_cancel_keyboard()
     )
     return NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['short_name'] = update.message.text
-    await update.message.reply_text("আপনার ইউনিক আইডি (Unique ID) লিখুন:")
+    await update.message.reply_text("আপনার ইউনিক আইডি (Unique ID) লিখুন:", reply_markup=get_form_cancel_keyboard())
     return UNIQUE_ID
 
 async def get_unique_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['unique_id'] = update.message.text
-    await update.message.reply_text("ছুটি নেওয়ার মূল কারণ (সংক্ষেপে উল্লেখ করুন):")
+    await update.message.reply_text("ছুটি নেওয়ার মূল কারণ (সংক্ষেপে উল্লেখ করুন):", reply_markup=get_form_cancel_keyboard())
     return REASON
 
 async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['reason'] = update.message.text
     await update.message.reply_text(
-        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)"
+        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)",
+        reply_markup=get_form_cancel_keyboard()
     )
     return DATES
 
@@ -175,7 +187,8 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dates = re.findall(r'\d{1,2}[-/\.]\d{1,2}(?:[-/\.]\d{2,4})?', text)
     if len(dates) < 2:
         await update.message.reply_text(
-            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)"
+            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)",
+            reply_markup=get_form_cancel_keyboard()
         )
         return DATES
 
@@ -187,7 +200,8 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not start_d or not end_d:
         await update.message.reply_text(
-            "⚠️ তারিখের ফরম্যাট সঠিক নয়! অনুগ্রহ করে পুনরায় সঠিক তারিখ লিখুন:"
+            "⚠️ তারিখের ফরম্যাট সঠিক নয়! অনুগ্রহ করে পুনরায় সঠিক তারিখ লিখুন:",
+            reply_markup=get_form_cancel_keyboard()
         )
         return DATES
 
@@ -198,7 +212,8 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if end_d < start_d:
         await update.message.reply_text(
-            "⚠️ শেষ তারিখ শুরু তারিখের আগের হতে পারে না! অনুগ্রহ করে পুনরায় সঠিক তারিখ লিখুন:"
+            "⚠️ শেষ তারিখ শুরু তারিখের আগের হতে পারে না! অনুগ্রহ করে পুনরায় সঠিক তারিখ লিখুন:",
+            reply_markup=get_form_cancel_keyboard()
         )
         return DATES
 
@@ -208,9 +223,8 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['days_count'] = days_count
 
     group_keyboard = ReplyKeyboardMarkup(
-        [["কি...বিজ্ঞান খুঁজছেন?"], ["বিজ্ঞান খুঁজে লাভ নাই!"]],
-        resize_keyboard=True,
-        one_time_keyboard=True
+        [["কি...বিজ্ঞান খুঁজছেন?"], ["বিজ্ঞান খুঁজে লাভ নাই!"], [BTN_CANCEL_FORM]],
+        resize_keyboard=True
     )
     await update.message.reply_text(
         'Group Name নির্বাচন করুন বা লিখে দিন:\n(যেমন: "কি...বিজ্ঞান খুঁজছেন?/বিজ্ঞান খুঁজে লাভ নাই!")',
@@ -280,12 +294,42 @@ async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
-async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ছুটির আবেদন বাতিল করা হলো।", reply_markup=get_main_keyboard())
+async def cancel_form_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("আপনার ছুটির আবেদন বাতিল হয়েছে✅", reply_markup=get_main_keyboard())
     return ConversationHandler.END
 
-# Cancel Ongoing Leave Handler
-async def cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Cancel Ongoing Leave Handler (Step 1: Ask Confirmation)
+async def ask_cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    today = get_today_bd()
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT * FROM leaves 
+        WHERE user_id = %s AND status = 'active' AND end_date >= %s 
+        ORDER BY id DESC LIMIT 1;
+    """, (user_id, today))
+    active_leave = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not active_leave:
+        await update.message.reply_text("আপনার কোনো চলমান ছুটি নেই।", reply_markup=get_main_keyboard())
+        return
+
+    confirm_keyboard = ReplyKeyboardMarkup(
+        [[BTN_YES, BTN_NO]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await update.message.reply_text(
+        "আপনি নিশ্চিতভাবে আপনার চলমান ছুটি বাতিল করতে চান?",
+        reply_markup=confirm_keyboard
+    )
+
+# Cancel Ongoing Leave Handler (Step 2: Confirm YES)
+async def confirm_cancel_yes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = get_today_bd()
 
@@ -319,6 +363,7 @@ async def cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYP
     cur.execute("SELECT SUM(days_count) as total FROM leaves WHERE user_id = %s;", (user_id,))
     new_total_days = cur.fetchone()['total'] or 0
 
+    cur.execute("UPDATE leaves SET total_days = %s WHERE id = %s;", (active_leave['id'],))
     cur.execute("UPDATE leaves SET total_days = %s WHERE id = %s;", (new_total_days, active_leave['id']))
     conn.commit()
 
@@ -345,6 +390,13 @@ async def cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     except Exception as e:
         logging.error(f"Backup group notify error: {e}")
+
+# Cancel Ongoing Leave Handler (Step 2: Confirm NO)
+async def confirm_cancel_no(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "আপনার চলমান ছুটি অব্যাহত আছে(বাতিল হয়নি)।✅",
+        reply_markup=get_main_keyboard()
+    )
 
 # Fetch Latest Receipt
 async def get_latest_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -392,18 +444,41 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(f"^{BTN_APPLY}$"), apply_start)],
         states={
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
-            UNIQUE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_unique_id)],
-            REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_reason)],
-            DATES: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_dates)],
-            GROUP_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_group_name)],
+            NAME: [
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)
+            ],
+            UNIQUE_ID: [
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_unique_id)
+            ],
+            REASON: [
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_reason)
+            ],
+            DATES: [
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_dates)
+            ],
+            GROUP_NAME: [
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_group_name)
+            ],
         },
-        fallbacks=[CommandHandler("cancel", cancel_conversation)]
+        fallbacks=[
+            MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+            CommandHandler("cancel", cancel_form_action)
+        ]
     )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
-    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_CANCEL}$"), cancel_ongoing_leave))
+    
+    # Cancel Ongoing Leave Confirmation Handlers
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_CANCEL}$"), ask_cancel_ongoing_leave))
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_YES}$"), confirm_cancel_yes))
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_NO}$"), confirm_cancel_no))
+    
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_RECEIPT}$"), get_latest_receipt))
 
     logging.info("Bot is running...")
