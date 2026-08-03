@@ -9,8 +9,12 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    ConversationHandler, ContextTypes, filters
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ConversationHandler,
+    ContextTypes,
+    filters
 )
 
 # Simple HTTP Handler for Render Health Check
@@ -88,12 +92,23 @@ def get_main_keyboard():
         resize_keyboard=True
     )
 
-def parse_date(date_str):
+def parse_date(date_str, today_year):
+    date_str = date_str.strip()
+    # Try full date formats (with year)
     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"):
         try:
-            return datetime.strptime(date_str.strip(), fmt).date()
+            return datetime.strptime(date_str, fmt).date()
         except ValueError:
             pass
+            
+    # Try short date formats (day/month)
+    for fmt in ("%d/%m", "%d-%m", "%d.%m"):
+        try:
+            dt = datetime.strptime(date_str, fmt)
+            return dt.replace(year=today_year).date()
+        except ValueError:
+            pass
+            
     return None
 
 def get_today_bd():
@@ -118,7 +133,7 @@ async def apply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
         SELECT * FROM leaves 
-        WHERE user_id = %s AND status = 'active' AND end_date >= %s
+        WHERE user_id = %s AND status = 'active' AND end_date >= %s 
         ORDER BY id DESC LIMIT 1;
     """, (user_id, today))
     active_leave = cur.fetchone()
@@ -152,25 +167,39 @@ async def get_unique_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['reason'] = update.message.text
     await update.message.reply_text(
-        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n(যেমন: 10/08/2026 to 15/08/2026 অথবা 10/08/2026 থেকে 15/08/2026):"
+        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n(যেমন: 15/08 to 20/09 অথবা 15/08/2026 to 20/09/2026):"
     )
     return DATES
 
 async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    dates = re.findall(r'\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}', text)
+    dates = re.findall(r'\d{1,2}[-/\.]\d{1,2}(?:[-/\.]\d{2,4})?', text)
     if len(dates) < 2:
         await update.message.reply_text(
-            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন (যেমন: 10/08/2026 to 15/08/2026):"
+            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন (যেমন: 15/08 to 20/09 অথবা 15/08/2026 to 20/09/2026):"
         )
         return DATES
 
-    start_d = parse_date(dates[0])
-    end_d = parse_date(dates[1])
+    today = get_today_bd()
+    today_year = today.year
 
-    if not start_d or not end_d or end_d < start_d:
+    start_d = parse_date(dates[0], today_year)
+    end_d = parse_date(dates[1], today_year)
+
+    if not start_d or not end_d:
         await update.message.reply_text(
-            "⚠️ তারিখের ফরম্যাট সঠিক নয় অথবা শেষ তারিখ শুরু তারিখের আগের! অনুগ্রহ করে পুনরায় সঠিক তারিখ লিখুন:"
+            "⚠️ তারিখের ফরম্যাট সঠিক নয়! অনুগ্রহ করে পুনরায় সঠিক তারিখ লিখুন:"
+        )
+        return DATES
+
+    # Handle short format crossing year boundary e.g., 28/12 to 05/01
+    if end_d < start_d and end_d.year == start_d.year:
+        if len(dates[1].replace('.','/').replace('-','/').split('/')) == 2:
+            end_d = end_d.replace(year=today_year + 1)
+
+    if end_d < start_d:
+        await update.message.reply_text(
+            "⚠️ শেষ তারিখ শুরু তারিখের আগের হতে পারে না! অনুগ্রহ করে পুনরায় সঠিক তারিখ লিখুন:"
         )
         return DATES
 
@@ -179,11 +208,11 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['end_date'] = end_d
     context.user_data['days_count'] = days_count
 
-    group_keyboard = ReplyKeyboardMarkup([
-        ["কি...বিজ্ঞান খুঁজছেন?"],
-        ["বিজ্ঞান খুঁজে লাভ নাই!"]
-    ], resize_keyboard=True, one_time_keyboard=True)
-
+    group_keyboard = ReplyKeyboardMarkup(
+        [["কি...বিজ্ঞান খুঁজছেন?"], ["বিজ্ঞান খুঁজে লাভ নাই!"]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
     await update.message.reply_text(
         'Group Name নির্বাচন করুন বা লিখে দিন:\n(যেমন: "কি...বিজ্ঞান খুঁজছেন?/বিজ্ঞান খুঁজে লাভ নাই!")',
         reply_markup=group_keyboard
@@ -193,7 +222,6 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_name = update.message.text
     user_id = update.effective_user.id
-    
     short_name = context.user_data['short_name']
     unique_id = context.user_data['unique_id']
     reason = context.user_data['reason']
@@ -216,7 +244,6 @@ async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         INSERT INTO leaves (user_id, short_name, unique_id, reason, start_date, end_date, group_name, days_count, token_number, total_days, status)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active');
     """, (user_id, short_name, unique_id, reason, start_date, end_date, group_name, days_count, token_number, total_days))
-
     conn.commit()
     cur.close()
     conn.close()
@@ -232,20 +259,23 @@ async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     receipt = (
         "-Application receipt 🧾\n\n"
-        f"আবেদনকারীর নাম: {short_name}\n"
-        f"Unique ID: {unique_id}\n"
-        f"ছুটির শেষ তারিখ: {end_date.strftime('%d/%m/%Y')}\n"
-        f"ছুটির দিন সংখ্যা: {days_count}\n"
-        f"পূর্বের সকল ছুটির দিন মিলিয়ে মোট ছুটির দিন সংখ্যা দাঁড়ালো: {total_days}\n"
-        f"Group Name: {group_name}\n"
-        f"Token Number: {token_number}"
+        f"✅আবেদনকারীর নাম: {short_name}\n"
+        f"✅Unique ID: {unique_id}\n"
+        f"✅ছুটির শেষ তারিখ: {end_date.strftime('%d/%m/%Y')}\n"
+        f"✅ছুটির দিন সংখ্যা: {days_count}\n"
+        f"✅পূর্বের সকল ছুটির দিন মিলিয়ে মোট ছুটির দিন সংখ্যা দাঁড়ালো: {total_days}\n"
+        f"✅Group Name: {group_name}\n"
+        f"✔️Token Number: {token_number}"
     )
 
     await update.message.reply_text(msg_ack, reply_markup=get_main_keyboard())
     await update.message.reply_text(receipt)
 
     try:
-        await context.bot.send_message(chat_id=BACKUP_GROUP_ID, text=f"📢 **নতুন ছুটির আবেদন:**\n\n{receipt}")
+        await context.bot.send_message(
+            chat_id=BACKUP_GROUP_ID,
+            text=f"📢 **নতুন ছুটির আবেদন:**\n\n{receipt}"
+        )
     except Exception as e:
         logging.error(f"Backup group notify error: {e}")
 
@@ -264,7 +294,7 @@ async def cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYP
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
         SELECT * FROM leaves 
-        WHERE user_id = %s AND status = 'active' AND end_date >= %s
+        WHERE user_id = %s AND status = 'active' AND end_date >= %s 
         ORDER BY id DESC LIMIT 1;
     """, (user_id, today))
     active_leave = cur.fetchone()
@@ -283,7 +313,7 @@ async def cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYP
 
     cur.execute("""
         UPDATE leaves 
-        SET status = 'cancelled', end_date = %s, days_count = %s
+        SET status = 'cancelled', end_date = %s, days_count = %s 
         WHERE id = %s;
     """, (today, actual_days, active_leave['id']))
 
@@ -295,13 +325,12 @@ async def cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYP
 
     receipt = (
         "-Application receipt 🧾\n\n"
-        f"আবেদনকারীর নাম: {active_leave['short_name']}\n"
-        f"Unique ID: {active_leave['unique_id']}\n"
-        f"ছুটির শেষ তারিখ: {today.strftime('%d/%m/%Y')}\n"
-        f"ছুটির দিন সংখ্যা: {actual_days}\n"
-        f"পূর্বের সকল ছুটির দিন মিলিয়ে মোট ছুটির দিন সংখ্যা দাঁড়ালো: {new_total_days}\n"
-        f"Group Name: {active_leave['group_name']}\n"
-        f"Token Number: {active_leave['token_number']}"
+        f"✅আবেদনকারীর নাম: {active_leave['short_name']}\n"
+        f"✅Unique ID: {active_leave['unique_id']}\n"
+        f"✅ছুটির দিন সংখ্যা: {actual_days}\n"
+        f"✅পূর্বের সকল ছুটির দিন মিলিয়ে মোট ছুটির দিন সংখ্যা দাঁড়ালো: {new_total_days}\n"
+        f"✅Group Name: {active_leave['group_name']}\n"
+        f"✔️Token Number: {active_leave['token_number']}"
     )
 
     cur.close()
@@ -311,7 +340,10 @@ async def cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(receipt)
 
     try:
-        await context.bot.send_message(chat_id=BACKUP_GROUP_ID, text=f"⚠️ **ছুটি বাতিল করা হয়েছে:**\n\n{receipt}")
+        await context.bot.send_message(
+            chat_id=BACKUP_GROUP_ID,
+            text=f"⚠️ **ছুটি বাতিল করা হয়েছে:**\n\n{receipt}"
+        )
     except Exception as e:
         logging.error(f"Backup group notify error: {e}")
 
@@ -329,16 +361,28 @@ async def get_latest_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("আপনার কোনো পূর্বের ছুটির আবেদন পাওয়া যায়নি।", reply_markup=get_main_keyboard())
         return
 
-    receipt = (
-        "-Application receipt 🧾\n\n"
-        f"আবেদনকারীর নাম: {latest['short_name']}\n"
-        f"Unique ID: {latest['unique_id']}\n"
-        f"ছুটির শেষ তারিখ: {latest['end_date'].strftime('%d/%m/%Y')}\n"
-        f"ছুটির দিন সংখ্যা: {latest['days_count']}\n"
-        f"পূর্বের সকল ছুটির দিন মিলিয়ে মোট ছুটির দিন সংখ্যা দাঁড়ালো: {latest['total_days']}\n"
-        f"Group Name: {latest['group_name']}\n"
-        f"Token Number: {latest['token_number']}"
-    )
+    if latest['status'] == 'cancelled':
+        receipt = (
+            "-Application receipt 🧾\n\n"
+            f"✅আবেদনকারীর নাম: {latest['short_name']}\n"
+            f"✅Unique ID: {latest['unique_id']}\n"
+            f"✅ছুটির দিন সংখ্যা: {latest['days_count']}\n"
+            f"✅পূর্বের সকল ছুটির দিন মিলিয়ে মোট ছুটির দিন সংখ্যা দাঁড়ালো: {latest['total_days']}\n"
+            f"✅Group Name: {latest['group_name']}\n"
+            f"✔️Token Number: {latest['token_number']}"
+        )
+    else:
+        receipt = (
+            "-Application receipt 🧾\n\n"
+            f"✅আবেদনকারীর নাম: {latest['short_name']}\n"
+            f"✅Unique ID: {latest['unique_id']}\n"
+            f"✅ছুটির শেষ তারিখ: {latest['end_date'].strftime('%d/%m/%Y')}\n"
+            f"✅ছুটির দিন সংখ্যা: {latest['days_count']}\n"
+            f"✅পূর্বের সকল ছুটির দিন মিলিয়ে মোট ছুটির দিন সংখ্যা দাঁড়ালো: {latest['total_days']}\n"
+            f"✅Group Name: {latest['group_name']}\n"
+            f"✔️Token Number: {latest['token_number']}"
+        )
+
     await update.message.reply_text(receipt, reply_markup=get_main_keyboard())
 
 # Main Function
