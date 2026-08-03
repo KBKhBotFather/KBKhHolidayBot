@@ -1,6 +1,8 @@
 import os
 import re
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 import pytz
 import psycopg2
@@ -10,6 +12,24 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
 )
+
+# Simple HTTP Handler for Render Health Check
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"KBKh Holiday Bot is running!")
+
+    def log_message(self, format, *args):
+        return  # Suppress default HTTP logging
+
+def run_health_check_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
+
+# Start HTTP server in background thread
+threading.Thread(target=run_health_check_server, daemon=True).start()
 
 # Logging Setup
 logging.basicConfig(
@@ -138,7 +158,6 @@ async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    # Extract dates using pattern matching
     dates = re.findall(r'\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}', text)
     if len(dates) < 2:
         await update.message.reply_text(
@@ -186,16 +205,13 @@ async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # Count tokens
     cur.execute("SELECT COUNT(*) as cnt FROM leaves WHERE user_id = %s;", (user_id,))
     token_number = cur.fetchone()['cnt'] + 1
 
-    # Sum previous total days
     cur.execute("SELECT SUM(days_count) as total FROM leaves WHERE user_id = %s;", (user_id,))
     prev_total = cur.fetchone()['total'] or 0
     total_days = prev_total + days_count
 
-    # Insert Record
     cur.execute("""
         INSERT INTO leaves (user_id, short_name, unique_id, reason, start_date, end_date, group_name, days_count, token_number, total_days, status)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active');
@@ -205,7 +221,6 @@ async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.close()
     conn.close()
 
-    # Text Responses
     msg_ack = (
         "✔️আপনার ছুটির আবেদন গৃহীত হয়েছে。\n\n"
         "✔️এখন আপনার মূল কাজ: দয়া করে ডিসকাশন গ্রুপে আপনার নামের পাশে \"📍(Absent)\" যুক্ত করে নিন। "
@@ -226,11 +241,9 @@ async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Token Number: {token_number}"
     )
 
-    # Send to User
     await update.message.reply_text(msg_ack, reply_markup=get_main_keyboard())
     await update.message.reply_text(receipt)
 
-    # Send to Backup Group
     try:
         await context.bot.send_message(chat_id=BACKUP_GROUP_ID, text=f"📢 **নতুন ছুটির আবেদন:**\n\n{receipt}")
     except Exception as e:
@@ -262,25 +275,21 @@ async def cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYP
         conn.close()
         return
 
-    # Recalculate days
     start_date = active_leave['start_date']
     if today < start_date:
         actual_days = 0
     else:
         actual_days = (today - start_date).days + 1
 
-    # Update active leave status
     cur.execute("""
         UPDATE leaves 
         SET status = 'cancelled', end_date = %s, days_count = %s
         WHERE id = %s;
     """, (today, actual_days, active_leave['id']))
 
-    # Recalculate total_days sum
     cur.execute("SELECT SUM(days_count) as total FROM leaves WHERE user_id = %s;", (user_id,))
     new_total_days = cur.fetchone()['total'] or 0
 
-    # Update total_days field
     cur.execute("UPDATE leaves SET total_days = %s WHERE id = %s;", (new_total_days, active_leave['id']))
     conn.commit()
 
