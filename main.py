@@ -38,9 +38,9 @@ logging.basicConfig(
 )
 
 # Environment Variables
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8933992881:AAF7HOCoVi73El-q-HePpy7omw0UK_F68QQ")
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:##RoKy5502##@db.qzuygxgnbufhydtlnrxw.supabase.co:5432/postgres")
-BACKUP_GROUP_ID = int(os.getenv("BACKUP_GROUP_ID", "-1004403881154"))
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
+BACKUP_GROUP_ID = int(os.getenv("BACKUP_GROUP_ID"))
 
 BD_TZ = pytz.timezone("Asia/Dhaka")
 
