@@ -116,9 +116,8 @@ def get_today_bd():
 
 # /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
     await update.message.reply_text(
-        f"স্বাগতম {user.first_name}!\n\nKBKh Holiday Bot-এ আপনাকে স্বাগতম। নিচের মেনু থেকে আপনার কাঙ্ক্ষিত অপশনটি নির্বাচন করুন:",
+        "Welcome to KBKh Leave Portal!\n\nYour quick assistant for managing time off and leave applications.\nChoose an option from the menu below to proceed✅",
         reply_markup=get_main_keyboard()
     )
     return ConversationHandler.END
@@ -167,7 +166,7 @@ async def get_unique_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['reason'] = update.message.text
     await update.message.reply_text(
-        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n(যেমন: 15/08 to 20/09 অথবা 15/08/2026 to 20/09/2026):"
+        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)"
     )
     return DATES
 
@@ -176,7 +175,7 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dates = re.findall(r'\d{1,2}[-/\.]\d{1,2}(?:[-/\.]\d{2,4})?', text)
     if len(dates) < 2:
         await update.message.reply_text(
-            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন (যেমন: 15/08 to 20/09 অথবা 15/08/2026 to 20/09/2026):"
+            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)"
         )
         return DATES
 
