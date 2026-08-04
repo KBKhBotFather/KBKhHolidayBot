@@ -117,23 +117,6 @@ def get_main_keyboard(user_id):
 def get_form_cancel_keyboard():
     return ReplyKeyboardMarkup([[BTN_CANCEL_FORM]], resize_keyboard=True)
 
-def parse_date(date_str, today_year):
-    date_str = date_str.strip()
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"):
-        try:
-            return datetime.strptime(date_str, fmt).date()
-        except ValueError:
-            pass
-            
-    for fmt in ("%d/%m", "%d-%m", "%d.%m"):
-        try:
-            dt = datetime.strptime(date_str, fmt)
-            return dt.replace(year=today_year).date()
-        except ValueError:
-            pass
-            
-    return None
-
 def get_today_bd():
     return datetime.now(BD_TZ).date()
 
@@ -195,17 +178,21 @@ async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['reason'] = update.message.text
     context.user_data['current_state'] = DATES
     await update.message.reply_text(
-        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 - 20/09)",
+        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n\n(⚠️অব্যশই এই ফরম্যাট এ: 15.8-20.9)",
         reply_markup=get_form_cancel_keyboard()
     )
     return DATES
 
 async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    dates = re.findall(r'\d{1,2}[-/\.]\d{1,2}(?:[-/\.]\d{2,4})?', text)
-    if len(dates) < 2:
+    
+    # Regex pattern to match DD.MM or DD/MM or DD-MM with optional year
+    pattern = r'(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?(?![./-])'
+    matches = re.findall(pattern, text)
+
+    if len(matches) < 2:
         await update.message.reply_text(
-            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 - 20/09)",
+            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n(⚠️অব্যশই এই ফরম্যাট এ: 15.8-20.9)",
             reply_markup=get_form_cancel_keyboard()
         )
         return DATES
@@ -213,8 +200,23 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = get_today_bd()
     today_year = today.year
 
-    start_d = parse_date(dates[0], today_year)
-    end_d = parse_date(dates[1], today_year)
+    def create_date_obj(match_tuple, default_year):
+        d, m, y = match_tuple
+        try:
+            day = int(d)
+            month = int(m)
+            if y:
+                year = int(y)
+                if year < 100:
+                    year += 2000
+            else:
+                year = default_year
+            return datetime(year, month, day).date()
+        except ValueError:
+            return None
+
+    start_d = create_date_obj(matches[0], today_year)
+    end_d = create_date_obj(matches[1], today_year)
 
     if not start_d or not end_d:
         await update.message.reply_text(
