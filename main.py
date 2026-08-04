@@ -186,8 +186,15 @@ async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     
-    # Regex pattern to match DD.MM or DD/MM or DD-MM with optional year
-    pattern = r'(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?(?![./-])'
+    # Convert Bangla digits to English digits if user enters in Bangla
+    bangla_digits = "০১২৩৪৫৬৭৮৯"
+    english_digits = "0123456789"
+    for b, e in zip(bangla_digits, english_digits):
+        text = text.replace(b, e)
+
+    # Smart Regex: Matches DD.MM or DD/MM or DD-MM with optional year
+    # Prevents mistaking the next date's day as a year when space is omitted (e.g. 6.8-12.8)
+    pattern = r'(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}|\d{2}(?![./-]\d)))?'
     matches = re.findall(pattern, text)
 
     if len(matches) < 2:
