@@ -48,14 +48,18 @@ ADMIN_ID = os.getenv("ADMIN_ID")
 BD_TZ = pytz.timezone("Asia/Dhaka")
 
 # Conversation States
-NAME, UNIQUE_ID, REASON, DATES, GROUP_NAME = range(5)
-ADMIN_GROUP, ADMIN_MONTH = range(5, 7)
+NAME, UNIQUE_ID, REASON, DATES, GROUP_NAME, CONFIRM_CANCEL_FORM = range(6)
+ADMIN_GROUP, ADMIN_MONTH = range(6, 8)
 
 # Main Buttons
 BTN_APPLY = "ছুটির আবেদন করুন!"
 BTN_CANCEL = "চলমান ছুটি এখনই বাতিল করুন!"
 BTN_RECEIPT = "সর্বশেষ ছুটির আবেদন Receipt!"
 BTN_CANCEL_FORM = "আবেদন বাতিল করুন ❌"
+
+# Form Cancel Confirmation Buttons
+BTN_FORM_YES_CANCEL = "হ্যাঁ, নিশ্চিত ❌"
+BTN_FORM_NO_CANCEL = "না, বাতিল করবেন না ↩️"
 
 # Admin Buttons
 BTN_ADMIN_LEAVE = "📊 Leave Applications"
@@ -104,9 +108,10 @@ def init_db():
         logging.error(f"DB Init Error: {e}")
 
 def get_main_keyboard(user_id):
-    buttons = [[BTN_APPLY], [BTN_CANCEL], [BTN_RECEIPT]]
     if ADMIN_ID and str(user_id) == str(ADMIN_ID):
-        buttons.append([BTN_ADMIN_LEAVE, BTN_ADMIN_RESET])
+        buttons = [[BTN_ADMIN_LEAVE], [BTN_ADMIN_RESET]]
+    else:
+        buttons = [[BTN_APPLY], [BTN_CANCEL], [BTN_RECEIPT]]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 def get_form_cancel_keyboard():
@@ -135,10 +140,12 @@ def get_today_bd():
 # /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    await update.message.reply_text(
-        "Welcome to KBKh Leave Portal!\n\nYour quick assistant for managing time off and leave applications.\nChoose an option from the menu below to proceed✅",
-        reply_markup=get_main_keyboard(user_id)
-    )
+    if ADMIN_ID and str(user_id) == str(ADMIN_ID):
+        msg = "Welcome Admin Control Panel!\n\nআপনার জন্য অপশনগুলো নিচে দেওয়া হলো:"
+    else:
+        msg = "Welcome to KBKh Leave Portal!\n\nYour quick assistant for managing time off and leave applications.\nChoose an option from the menu below to proceed✅"
+    
+    await update.message.reply_text(msg, reply_markup=get_main_keyboard(user_id))
     return ConversationHandler.END
 
 # Start Leave Application
@@ -165,6 +172,7 @@ async def apply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
+    context.user_data['current_state'] = NAME
     await update.message.reply_text(
         "আপনার সংক্ষিপ্ত নাম লিখুন:",
         reply_markup=get_form_cancel_keyboard()
@@ -173,16 +181,19 @@ async def apply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['short_name'] = update.message.text
+    context.user_data['current_state'] = UNIQUE_ID
     await update.message.reply_text("আপনার ইউনিক আইডি (Unique ID) লিখুন:", reply_markup=get_form_cancel_keyboard())
     return UNIQUE_ID
 
 async def get_unique_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['unique_id'] = update.message.text
+    context.user_data['current_state'] = REASON
     await update.message.reply_text("ছুটি নেওয়ার মূল কারণ (সংক্ষেপে উল্লেখ করুন):", reply_markup=get_form_cancel_keyboard())
     return REASON
 
 async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['reason'] = update.message.text
+    context.user_data['current_state'] = DATES
     await update.message.reply_text(
         "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)",
         reply_markup=get_form_cancel_keyboard()
@@ -212,11 +223,11 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return DATES
 
-    if end_d < start_d and end_d.year == start_d.year:
-        if len(dates[1].replace('.','/').replace('-','/').split('/')) == 2:
-            end_d = end_d.replace(year=today_year + 1)
+    # Handle cross-year ONLY if start month is Dec and end month is Jan
+    if start_d.month == 12 and end_d.month == 1 and end_d < start_d:
+        end_d = end_d.replace(year=today_year + 1)
 
-    # Date Validation Logic
+    # Strict Validation Checks
     is_start_invalid = start_d < today
     is_end_invalid = end_d < start_d
 
@@ -240,10 +251,20 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return DATES
 
     days_count = (end_d - start_d).days + 1
+
+    # Max Limit Check (Max 60 days per single application)
+    if days_count > 60:
+        await update.message.reply_text(
+            "⚠️ভুল তারিখ প্রদান করেছেন!\n\n(একবারে সর্বোচ্চ ৬০ দিনের বেশি ছুটি আবেদন করা যাবে না)",
+            reply_markup=get_form_cancel_keyboard()
+        )
+        return DATES
+
     context.user_data['start_date'] = start_d
     context.user_data['end_date'] = end_d
     context.user_data['days_count'] = days_count
 
+    context.user_data['current_state'] = GROUP_NAME
     group_keyboard = ReplyKeyboardMarkup(
         [["কি...বিজ্ঞান খুঁজছেন?"], ["বিজ্ঞান খুঁজে লাভ নাই!"], [BTN_CANCEL_FORM]],
         resize_keyboard=True
@@ -315,12 +336,24 @@ async def get_group_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
-async def cancel_form_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    await update.message.reply_text("আপনার ছুটির আবেদন বাতিল হয়েছে✅", reply_markup=get_main_keyboard(user_id))
-    return ConversationHandler.END
+# Form Cancel Confirmation
+async def prompt_cancel_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    kb = ReplyKeyboardMarkup([[BTN_FORM_YES_CANCEL, BTN_FORM_NO_CANCEL]], resize_keyboard=True)
+    await update.message.reply_text("আপনি কি নিশ্চিতভাবে এই ছুটির আবেদনটি বাতিল করতে চান?", reply_markup=kb)
+    return CONFIRM_CANCEL_FORM
 
-# Cancellation logic
+async def confirm_cancel_form_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    user_id = update.effective_user.id
+    if text == BTN_FORM_YES_CANCEL:
+        await update.message.reply_text("আপনার ছুটির আবেদন প্রক্রিয়া বাতিল করা হলো।✅", reply_markup=get_main_keyboard(user_id))
+        return ConversationHandler.END
+    else:
+        prev_state = context.user_data.get('current_state', NAME)
+        await update.message.reply_text("আবেদন প্রক্রিয়া বাতিল করা হয়নি। অনুগ্রহ করে তথ্যটি প্রবেশ করুন:", reply_markup=get_form_cancel_keyboard())
+        return prev_state
+
+# Ongoing Leave Cancellation Logic
 async def ask_cancel_ongoing_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = get_today_bd()
@@ -525,11 +558,8 @@ async def admin_month_selected(update: Update, context: ContextTypes.DEFAULT_TYP
         msg = f"📊 **{selected_month_name} Month Leave Summary**\nGroup: {selected_group}\n\nএই মাসে কোনো ছুটির রেকর্ড পাওয়া যায়নি।"
     else:
         msg = f"📊 **{selected_month_name} Month Leave Summary**\nGroup: {selected_group}\n\n"
-        total_group_days = 0
         for name, days in user_days.items():
             msg += f"{name} - {days}Days\n"
-            total_group_days += days
-        msg += f"\n--------------------\nTotal Leave Taken: {total_group_days} Days"
 
     await update.message.reply_text(msg, reply_markup=get_main_keyboard(user_id))
     return ConversationHandler.END
@@ -573,29 +603,32 @@ def main():
         entry_points=[MessageHandler(filters.Regex(f"^{BTN_APPLY}$"), apply_start)],
         states={
             NAME: [
-                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)
             ],
             UNIQUE_ID: [
-                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_unique_id)
             ],
             REASON: [
-                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_reason)
             ],
             DATES: [
-                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_dates)
             ],
             GROUP_NAME: [
-                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_group_name)
             ],
+            CONFIRM_CANCEL_FORM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_cancel_form_handler)
+            ]
         },
         fallbacks=[
-            MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
-            CommandHandler("cancel", cancel_form_action)
+            MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
+            CommandHandler("cancel", prompt_cancel_form)
         ]
     )
 
@@ -604,17 +637,17 @@ def main():
         entry_points=[MessageHandler(filters.Regex(f"^{BTN_ADMIN_LEAVE}$"), admin_leave_start)],
         states={
             ADMIN_GROUP: [
-                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_group_selected)
             ],
             ADMIN_MONTH: [
-                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
+                MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_month_selected)
             ],
         },
         fallbacks=[
-            MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), cancel_form_action),
-            CommandHandler("cancel", cancel_form_action)
+            MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
+            CommandHandler("cancel", prompt_cancel_form)
         ]
     )
 
