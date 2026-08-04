@@ -195,7 +195,7 @@ async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['reason'] = update.message.text
     context.user_data['current_state'] = DATES
     await update.message.reply_text(
-        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)",
+        "ছুটি শুরু এবং শেষ হওয়ার তারিখ উল্লেখ করুন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 - 20/09)",
         reply_markup=get_form_cancel_keyboard()
     )
     return DATES
@@ -205,7 +205,7 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dates = re.findall(r'\d{1,2}[-/\.]\d{1,2}(?:[-/\.]\d{2,4})?', text)
     if len(dates) < 2:
         await update.message.reply_text(
-            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 to 20/09)",
+            "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n(⚠️অব্যশই এই ফরম্যাট এ দেবেন: 15/08 - 20/09)",
             reply_markup=get_form_cancel_keyboard()
         )
         return DATES
