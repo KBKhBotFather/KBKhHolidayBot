@@ -123,6 +123,7 @@ def get_today_bd():
 # /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    context.user_data.clear() # Clear any stuck states
     if ADMIN_ID and str(user_id) == str(ADMIN_ID):
         msg = "Welcome Admin Control Panel!\n\nআপনার জন্য অপশনগুলো নিচে দেওয়া হলো:"
     else:
@@ -186,14 +187,11 @@ async def get_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     
-    # Convert Bangla digits to English digits if user enters in Bangla
     bangla_digits = "০১২৩৪৫৬৭৮৯"
     english_digits = "0123456789"
     for b, e in zip(bangla_digits, english_digits):
         text = text.replace(b, e)
 
-    # Smart Regex: Matches DD.MM or DD/MM or DD-MM with optional year
-    # Prevents mistaking the next date's day as a year when space is omitted (e.g. 6.8-12.8)
     pattern = r'(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}|\d{2}(?![./-]\d)))?'
     matches = re.findall(pattern, text)
 
@@ -232,11 +230,9 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return DATES
 
-    # Handle cross-year ONLY if start month is Dec and end month is Jan
     if start_d.month == 12 and end_d.month == 1 and end_d < start_d:
         end_d = end_d.replace(year=today_year + 1)
 
-    # Strict Validation Checks
     is_start_invalid = start_d < today
     is_end_invalid = end_d < start_d
 
@@ -261,7 +257,6 @@ async def get_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     days_count = (end_d - start_d).days + 1
 
-    # Max Limit Check (Max 60 days per single application)
     if days_count > 60:
         await update.message.reply_text(
             "⚠️ভুল তারিখ প্রদান করেছেন!\n\n(একবারে সর্বোচ্চ ৬০ দিনের বেশি ছুটি আবেদন করা যাবে না)",
@@ -641,15 +636,15 @@ def main():
         ]
     )
 
-    # Admin Summary Conversation
+    # Admin Summary Conversation (Regex updated to handle emoji variation selectors)
     admin_summary_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(f"^{BTN_ADMIN_LEAVE}$"), admin_leave_start)],
+        entry_points=[MessageHandler(filters.Regex(r".*Leave Applications.*"), admin_leave_start)],
         states={
             ADMIN_GROUP: [
                 MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_group_selected)
             ],
-            ADMIN_MONTH: [
+                ADMIN_MONTH: [
                 MessageHandler(filters.Regex(f"^{BTN_CANCEL_FORM}$"), prompt_cancel_form),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_month_selected)
             ],
@@ -669,8 +664,8 @@ def main():
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_YES}$"), confirm_cancel_yes))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_NO}$"), confirm_cancel_no))
     
-    # Handlers for Admin Reset
-    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_ADMIN_RESET}$"), admin_reset_start))
+    # Handlers for Admin Reset (Regex updated)
+    app.add_handler(MessageHandler(filters.Regex(r".*Reset Data.*"), admin_reset_start))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_RESET_YES}$"), admin_reset_confirm_yes))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_RESET_NO}$"), admin_reset_confirm_no))
 
