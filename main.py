@@ -48,14 +48,18 @@ ADMIN_ID = os.getenv("ADMIN_ID")
 BD_TZ = pytz.timezone("Asia/Dhaka")
 
 # Conversation States
-NAME, UNIQUE_ID, REASON, DATES, GROUP_NAME = range(5)
-ADMIN_GROUP, ADMIN_MONTH = range(5, 7)
+NAME, UNIQUE_ID, REASON, DATES, GROUP_NAME, CONFIRM_FORM_CANCEL = range(6)
+ADMIN_GROUP, ADMIN_MONTH = range(6, 8)
 
 # Main Buttons
 BTN_APPLY = "ছুটির আবেদন করুন!"
 BTN_CANCEL = "চলমান ছুটি এখনই বাতিল করুন!"
 BTN_RECEIPT = "সর্বশেষ ছুটির আবেদন Receipt!"
 BTN_CANCEL_FORM = "আবেদন বাতিল করুন ❌"
+
+# Cancellation Confirmation Buttons for Regular Users
+BTN_CONFIRM_CANCEL_YES = "হ্যাঁ, নিশ্চিত ❌"
+BTN_CONFIRM_CANCEL_NO = "না, বাতিল করবেন না ↩️"
 
 # Admin Buttons
 BTN_ADMIN_LEAVE = "📊 Leave Applications"
@@ -122,7 +126,7 @@ def get_today_bd():
 # /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    context.user_data.clear() # Clear state
+    context.user_data.clear()
     if ADMIN_ID and str(user_id) == str(ADMIN_ID):
         msg = "Welcome Admin Control Panel!\n\nআপনার জন্য অপশনগুলো নিচে দেওয়া হলো:"
     else:
@@ -131,11 +135,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, reply_markup=get_main_keyboard(user_id))
     return ConversationHandler.END
 
-# Instant Direct Cancel Handler
+# Smart Cancel Handler (Direct for Admin, Yes/No for Users)
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # Admin gets direct cancel
+    if ADMIN_ID and str(user_id) == str(ADMIN_ID):
+        context.user_data.clear()
+        await update.message.reply_text("প্রক্রিয়া বাতিল করা হয়েছে।✅", reply_markup=get_main_keyboard(user_id))
+        return ConversationHandler.END
+
+    # Regular user gets asked for confirmation
+    confirm_kb = ReplyKeyboardMarkup([[BTN_CONFIRM_CANCEL_YES, BTN_CONFIRM_CANCEL_NO]], resize_keyboard=True)
+    await update.message.reply_text("আপনি কি নিশ্চিতভাবে এই ছুটির আবেদন ফরমটি বাতিল করতে চান?", reply_markup=confirm_kb)
+    return CONFIRM_FORM_CANCEL
+
+async def handle_confirm_cancel_yes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     context.user_data.clear()
-    await update.message.reply_text("প্রক্রিয়া বাতিল করা হয়েছে।✅", reply_markup=get_main_keyboard(user_id))
+    await update.message.reply_text("আবেদন প্রক্রিয়াটি বাতিল করা হয়েছে।✅", reply_markup=get_main_keyboard(user_id))
+    return ConversationHandler.END
+
+async def handle_confirm_cancel_no(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text("আবেদন বাতিল করা হয়নি। আপনি চাইলে মেইন মেনু থেকে পুনরায় ফর্ম শুরু করতে পারেন।", reply_markup=get_main_keyboard(user_id))
     return ConversationHandler.END
 
 # Global Fallback for Navigation Buttons during state
@@ -662,7 +685,6 @@ def main():
     init_db()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Filter for Main Menu buttons to interrupt any active conversation
     nav_buttons_filter = filters.Regex(
         f"^({re.escape(BTN_APPLY)}|{re.escape(BTN_CANCEL)}|{re.escape(BTN_RECEIPT)}|{re.escape(BTN_ADMIN_LEAVE)}|{re.escape(BTN_ADMIN_RESET)}|.*Leave Applications.*|.*Reset Data.*)$"
     )
@@ -697,6 +719,11 @@ def main():
                 MessageHandler(cancel_btn_filter, cancel_handler),
                 MessageHandler(nav_buttons_filter, global_cancel_and_reroute),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_group_name)
+            ],
+            CONFIRM_FORM_CANCEL: [
+                MessageHandler(filters.Regex(f"^{re.escape(BTN_CONFIRM_CANCEL_YES)}$"), handle_confirm_cancel_yes),
+                MessageHandler(filters.Regex(f"^{re.escape(BTN_CONFIRM_CANCEL_NO)}$"), handle_confirm_cancel_no),
+                MessageHandler(nav_buttons_filter, global_cancel_and_reroute)
             ]
         },
         fallbacks=[
@@ -720,6 +747,11 @@ def main():
                 MessageHandler(nav_buttons_filter, global_cancel_and_reroute),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_month_selected)
             ],
+            CONFIRM_FORM_CANCEL: [
+                MessageHandler(filters.Regex(f"^{re.escape(BTN_CONFIRM_CANCEL_YES)}$"), handle_confirm_cancel_yes),
+                MessageHandler(filters.Regex(f"^{re.escape(BTN_CONFIRM_CANCEL_NO)}$"), handle_confirm_cancel_no),
+                MessageHandler(nav_buttons_filter, global_cancel_and_reroute)
+            ]
         },
         fallbacks=[
             MessageHandler(cancel_btn_filter, cancel_handler),
