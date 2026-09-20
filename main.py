@@ -11,8 +11,8 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 
 # ⚙️ Environment Variables
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8827007370:AAH0wyj-Yt5UYHWGhuvJE3lr1jpjXJZcxhs").strip()
-DB_URI = os.environ.get("DATABASE_URL").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+DB_URI = os.environ.get("DATABASE_URL", "").strip()
 ADMIN_ID = os.environ.get("ADMIN_ID", "8383532004").strip()
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -475,15 +475,32 @@ def handle_admin_callbacks(call):
         
         bot.edit_message_text(f"All leave data for the {cat} has been deleted Successfully✅", call.message.chat.id, call.message.message_id)
 
+
+# 🔥 পার্মানেন্ট অ্যান্টি-স্প্যাম এবং অ্যান্টি-কনফ্লিক্ট সিস্টেম 🔥
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
-    print("🤖 KBKh Holiday Bot is Active & Running...")
     
-    try: bot.remove_webhook()
-    except Exception: pass
+    print("🤖 KBKh Holiday Bot is starting... Clearing old webhooks and spam links...")
+    
+    # জোরপূর্বক পুরনো স্প্যামারদের কানেকশন কেটে দেওয়া হচ্ছে
+    try:
+        bot.remove_webhook()
+        time.sleep(2)
+    except Exception as e:
+        print(f"Webhook clear warning: {e}")
+        
+    print("🟢 Bot is now exclusively connected to Render!")
         
     while True:
-        try: bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
-        except Exception as e: time.sleep(5)
+        try:
+            # skip_pending=True মানে আপনার সার্ভার বন্ধ থাকার সময় স্প্যামারদের পাঠানো ফালতু মেসেজগুলো ইগনোর করা হবে
+            bot.infinity_polling(skip_pending=True, timeout=40, long_polling_timeout=40)
+        except telebot.apihelper.ApiTelegramException as e:
+            if e.error_code == 409:
+                print("⚠️ CONFLICT ERROR: অন্য কেউ এখনো আপনার টোকেন ব্যবহার করার চেষ্টা করছে! দয়া করে BotFather থেকে টোকেনটি আবার Revoke করুন।")
+            time.sleep(5)
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(5)
