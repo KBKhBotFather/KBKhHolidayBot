@@ -11,7 +11,7 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 
 # ⚙️ Environment Variables
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8827007370:AAHzXIHLHqzft4Arn_ZxTrrb9YN0NzyxQyA").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8827007370:AAH0wyj-Yt5UYHWGhuvJE3lr1jpjXJZcxhs").strip()
 DB_URI = os.environ.get("DATABASE_URL").strip()
 ADMIN_ID = os.environ.get("ADMIN_ID", "8383532004").strip()
 
