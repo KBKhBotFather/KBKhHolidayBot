@@ -11,7 +11,7 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 
 # ⚙️ Environment Variables
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8827007370:AAGKVgS4mY42CIweVisLrpvgwNiA_eOnXPU").strip()
 DB_URI = os.environ.get("DATABASE_URL", "").strip()
 ADMIN_ID = os.environ.get("ADMIN_ID", "8383532004").strip()
 
@@ -316,9 +316,10 @@ def cancel_ongoing_leave_confirm(message):
         # Update Leave
         cursor.execute("UPDATE holiday_leaves SET status = 'cancelled', end_date = %s, days_count = %s WHERE id = %s", (today, actual_days, active_leave['id']))
         
-        # Calculate Total Leaves for Receipt
-        cursor.execute("SELECT SUM(days_count) FROM holiday_leaves WHERE telegram_id = %s", (tg_id,))
-        total_days = cursor.fetchone()[0] or actual_days
+        # Calculate Total Leaves for Receipt (FIXED CRASH BUG)
+        cursor.execute("SELECT SUM(days_count) as total_days FROM holiday_leaves WHERE telegram_id = %s", (tg_id,))
+        total_days_row = cursor.fetchone()
+        total_days = total_days_row['total_days'] if total_days_row and total_days_row['total_days'] else actual_days
         
         # 🔥 Refund Days to Task Records Central DB 🔥
         cursor.execute("UPDATE task_records SET holiday_days = holiday_days - %s WHERE telegram_id = %s AND month = %s", (refund_days, tg_id, month_name))
@@ -359,8 +360,10 @@ def show_latest_receipt(message):
         conn.close()
         return bot.send_message(message.chat.id, "No Application receipt found!", reply_markup=get_main_keyboard(tg_id))
         
-    cursor.execute("SELECT SUM(days_count) FROM holiday_leaves WHERE telegram_id = %s", (tg_id,))
-    total_days = cursor.fetchone()[0] or latest['days_count']
+    # Calculate Total Leaves for Receipt (FIXED CRASH BUG)
+    cursor.execute("SELECT SUM(days_count) as total_days FROM holiday_leaves WHERE telegram_id = %s", (tg_id,))
+    sum_row = cursor.fetchone()
+    total_days = sum_row['total_days'] if sum_row and sum_row['total_days'] else latest['days_count']
     conn.close()
     
     user_data = get_member_info(tg_id)
@@ -475,32 +478,25 @@ def handle_admin_callbacks(call):
         
         bot.edit_message_text(f"All leave data for the {cat} has been deleted Successfully✅", call.message.chat.id, call.message.message_id)
 
-
-# 🔥 পার্মানেন্ট অ্যান্টি-স্প্যাম এবং অ্যান্টি-কনফ্লিক্ট সিস্টেম 🔥
+# 🔥 পার্মানেন্ট অ্যান্টি-স্প্যাম সিস্টেম (সুপারফাস্ট) 🔥
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
     
-    print("🤖 KBKh Holiday Bot is starting... Clearing old webhooks and spam links...")
-    
-    # জোরপূর্বক পুরনো স্প্যামারদের কানেকশন কেটে দেওয়া হচ্ছে
     try:
         bot.remove_webhook()
-        time.sleep(2)
-    except Exception as e:
-        print(f"Webhook clear warning: {e}")
+        time.sleep(1)
+    except Exception:
+        pass
         
-    print("🟢 Bot is now exclusively connected to Render!")
+    print("🟢 Bot is running superfast on Render!")
         
     while True:
         try:
-            # skip_pending=True মানে আপনার সার্ভার বন্ধ থাকার সময় স্প্যামারদের পাঠানো ফালতু মেসেজগুলো ইগনোর করা হবে
-            bot.infinity_polling(skip_pending=True, timeout=40, long_polling_timeout=40)
+            # timeout ফাংশনটি সরিয়ে দিয়েছি, এখন বট সুপারফাস্ট কাজ করবে!
+            bot.infinity_polling(skip_pending=True)
         except telebot.apihelper.ApiTelegramException as e:
-            if e.error_code == 409:
-                print("⚠️ CONFLICT ERROR: অন্য কেউ এখনো আপনার টোকেন ব্যবহার করার চেষ্টা করছে! দয়া করে BotFather থেকে টোকেনটি আবার Revoke করুন।")
             time.sleep(5)
         except Exception as e:
-            print(f"Polling error: {e}")
             time.sleep(5)
