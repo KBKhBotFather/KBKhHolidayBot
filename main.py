@@ -40,7 +40,7 @@ def get_db_connection():
         uri = uri.replace("postgres://", "postgresql://", 1)
     return psycopg2.connect(uri)
 
-# 🛠️ Database Setup (New Table for Holidays)
+# 🛠️ Database Setup
 def init_db():
     try:
         conn = get_db_connection()
@@ -69,14 +69,25 @@ INFO_TEAMS = ["Team Alpha", "Team Beta", "Team Gamma"]
 MEME_TEAMS = ["Team Electron", "Team Proton", "Team Neutron"]
 user_states = {}
 
-# 🛡️ Member Verification Function
+# 🔥 সুপারফাস্ট স্পিডের জন্য Cache System 🔥
+USER_CACHE = {}
+CACHE_TTL = 300  # ৫ মিনিট ক্যাশ ধরে রাখবে
+
+# 🛡️ Member Verification Function (Optimized for Speed)
 def get_member_info(tg_id):
+    now = time.time()
+    # যদি ইউজারের ডেটা ক্যাশে থাকে এবং ৫ মিনিটের কম পুরনো হয়, তবে সরাসরি দিয়ে দেবে (০ সেকেন্ড সময় লাগবে)
+    if tg_id in USER_CACHE and (now - USER_CACHE[tg_id]['time'] < CACHE_TTL):
+        return USER_CACHE[tg_id]['data']
+        
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT fb_name, unique_id, team_name, status, is_blocked, is_removed FROM members WHERE telegram_id = %s", (tg_id,))
         user = cursor.fetchone()
         conn.close()
+        # নতুন ডেটা ক্যাশে সেভ করে রাখছি
+        USER_CACHE[tg_id] = {'data': user, 'time': now}
         return user
     except Exception:
         return None
@@ -151,7 +162,7 @@ def apply_leave_start(message):
         bot.send_message(message.chat.id, f"আপনার {end_str} তারিখ পর্যন্ত ছুটি চলমান আছে। এটি শেষ হলে এরপর পুনরায় আবেদন করতে পারবেন।", reply_markup=get_main_keyboard(tg_id))
         return
 
-    msg = bot.send_message(message.chat.id, "Please briefly state the primary reason for taking leave (in Bengali):", reply_markup=get_cancel_form_keyboard())
+    msg = bot.send_message(message.chat.id, "অনুগ্রহ করে ছুটি নেওয়ার প্রধান কারণটি সংক্ষেপে উল্লেখ করুন:", reply_markup=get_cancel_form_keyboard())
     user_states[tg_id] = {}
     bot.register_next_step_handler(msg, step_get_reason)
 
@@ -160,7 +171,7 @@ def step_get_reason(message):
     tg_id = message.from_user.id
     user_states[tg_id]['reason'] = message.text.strip()
     
-    msg = bot.send_message(message.chat.id, "Please specify the leave Start and End dates\n( ⚠️ Must be in 'DD.MM-DD.MM' format)", reply_markup=get_cancel_form_keyboard())
+    msg = bot.send_message(message.chat.id, "অনুগ্রহ করে ছুটির শুরুর ও শেষের তারিখ উল্লেখ করুন।\n(⚠️ অবশ্যই 'Day.Month-Day.Month' ফরম্যাটে হতে হবে):", reply_markup=get_cancel_form_keyboard())
     bot.register_next_step_handler(msg, step_get_dates)
 
 def step_get_dates(message):
@@ -168,7 +179,7 @@ def step_get_dates(message):
     tg_id = message.from_user.id
     text = message.text.strip()
     
-    # 🕒 Core Date Logic (Unchanged and Protected!)
+    # 🕒 Core Date Logic 
     bangla_digits = "০১২৩৪৫৬৭৮৯"
     english_digits = "0123456789"
     for b, e in zip(bangla_digits, english_digits): text = text.replace(b, e)
@@ -177,7 +188,7 @@ def step_get_dates(message):
     matches = re.findall(pattern, text)
 
     if len(matches) < 2:
-        msg = bot.send_message(message.chat.id, "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n( ⚠️ Must be in 'DD.MM-DD.MM' format)", reply_markup=get_cancel_form_keyboard())
+        msg = bot.send_message(message.chat.id, "⚠️ তারিখ সঠিকভাবে পাওয়া যায়নি! অনুগ্রহ করে আবার সঠিক ফরম্যাটে দিন\n\n(⚠️ অবশ্যই 'Day.Month-Day.Month' ফরম্যাটে হতে হবে)", reply_markup=get_cancel_form_keyboard())
         return bot.register_next_step_handler(msg, step_get_dates)
 
     today = get_today_bd()
@@ -229,11 +240,11 @@ def step_get_dates(message):
         # Save Leave
         cursor.execute("INSERT INTO holiday_leaves (telegram_id, reason, start_date, end_date, days_count) VALUES (%s, %s, %s, %s, %s)", (tg_id, reason, start_d, end_d, days_count))
         
-        # Calculate Total Leaves for Receipt
+        # Calculate Total Leaves
         cursor.execute("SELECT SUM(days_count) FROM holiday_leaves WHERE telegram_id = %s", (tg_id,))
         total_days = cursor.fetchone()[0] or days_count
         
-        # 🔥 Update 0Days in Task Records Central DB 🔥
+        # 🔥 Update 0Days in Task Records 🔥
         cursor.execute("INSERT INTO task_records (telegram_id, month, holiday_days) VALUES (%s, %s, %s) ON CONFLICT (telegram_id, month) DO UPDATE SET holiday_days = task_records.holiday_days + %s", (tg_id, month_name, days_count, days_count))
         
         conn.commit()
@@ -256,11 +267,11 @@ def step_get_dates(message):
     t_disp = str(user_data['team_name']).replace("Team ", "")
     receipt = (
         "- Application receipt 🧾\n\n"
-        f"Applicant Name: {user_data['fb_name']}\n"
-        f"✓Unique ID: {user_data['unique_id']}\n"
-        f"✓Holiday end date: {end_d.strftime('%d/%m/%Y')}\n"
-        f"✓Number of holidays: {days_count}\n"
-        f"✓The Total number of holidays, including all previous holidays, is: {total_days}\n"
+        f"✓আবেদনকারীর নাম: {user_data['fb_name']}\n"
+        f"✓ইউনিক আইডি: {user_data['unique_id']}\n"
+        f"✓ছুটি শেষ হওয়ার তারিখ: {end_d.strftime('%d/%m/%Y')}\n"
+        f"✓ছুটির দিন সংখ্যা: {days_count}\n"
+        f"✓পূর্ববর্তী সকল ছুটি সহ মোট ছুটির সংখ্যা হলো: {total_days}\n"
         f"✓Team: {t_disp}"
     )
     
@@ -282,7 +293,7 @@ def cancel_ongoing_leave_start(message):
     conn.close()
     
     if not active_leave:
-        return bot.send_message(message.chat.id, "Your ongoing leave remains active (not cancelled).✅", reply_markup=get_main_keyboard(tg_id))
+        return bot.send_message(message.chat.id, "আপনার বর্তমানে কোনো ছুটি চলমান নেই।", reply_markup=get_main_keyboard(tg_id))
         
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
     markup.add(KeyboardButton("Yes"), KeyboardButton("No"))
@@ -304,7 +315,7 @@ def cancel_ongoing_leave_confirm(message):
     
     if not active_leave:
         conn.close()
-        return bot.send_message(message.chat.id, "Your ongoing leave remains active (not cancelled).✅", reply_markup=get_main_keyboard(tg_id))
+        return bot.send_message(message.chat.id, "আপনার বর্তমানে কোনো ছুটি চলমান নেই।", reply_markup=get_main_keyboard(tg_id))
         
     # Logic to calculate used days and refund unused days
     start_date = active_leave['start_date']
@@ -316,12 +327,12 @@ def cancel_ongoing_leave_confirm(message):
         # Update Leave
         cursor.execute("UPDATE holiday_leaves SET status = 'cancelled', end_date = %s, days_count = %s WHERE id = %s", (today, actual_days, active_leave['id']))
         
-        # Calculate Total Leaves for Receipt (FIXED CRASH BUG)
+        # Calculate Total Leaves for Receipt 
         cursor.execute("SELECT SUM(days_count) as total_days FROM holiday_leaves WHERE telegram_id = %s", (tg_id,))
         total_days_row = cursor.fetchone()
         total_days = total_days_row['total_days'] if total_days_row and total_days_row['total_days'] else actual_days
         
-        # 🔥 Refund Days to Task Records Central DB 🔥
+        # 🔥 Refund Days to Task Records 🔥
         cursor.execute("UPDATE task_records SET holiday_days = holiday_days - %s WHERE telegram_id = %s AND month = %s", (refund_days, tg_id, month_name))
         cursor.execute("UPDATE task_records SET holiday_days = 0 WHERE telegram_id = %s AND month = %s AND holiday_days < 0", (tg_id, month_name))
         conn.commit()
@@ -336,11 +347,11 @@ def cancel_ongoing_leave_confirm(message):
         "Your ongoing leave has been successfully cancelled.☑️\n"
         "Please collect the latest receipt\n\n"
         "- Application receipt 🧾\n\n"
-        f"Applicant Name: {user_data['fb_name']}\n"
-        f"✓Unique ID: {user_data['unique_id']}\n"
-        f"✓Holiday end date: {today.strftime('%d/%m/%Y')}\n"
-        f"✓Number of holidays: {actual_days}\n"
-        f"✓The Total number of holidays, including all previous holidays, is: {total_days}\n"
+        f"✓আবেদনকারীর নাম: {user_data['fb_name']}\n"
+        f"✓ইউনিক আইডি: {user_data['unique_id']}\n"
+        f"✓ছুটি শেষ হওয়ার তারিখ: {today.strftime('%d/%m/%Y')}\n"
+        f"✓ছুটির দিন সংখ্যা: {actual_days}\n"
+        f"✓পূর্ববর্তী সকল ছুটি সহ মোট ছুটির সংখ্যা হলো: {total_days}\n"
         f"✓Team: {t_disp}"
     )
     
@@ -354,13 +365,13 @@ def show_latest_receipt(message):
     
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
+    # সর্বশেষ রেকর্ডটি নিয়ে আসবে (তা চলমান থাকুক বা না থাকুক)
     cursor.execute("SELECT * FROM holiday_leaves WHERE telegram_id = %s ORDER BY id DESC LIMIT 1", (tg_id,))
     latest = cursor.fetchone()
     if not latest:
         conn.close()
         return bot.send_message(message.chat.id, "No Application receipt found!", reply_markup=get_main_keyboard(tg_id))
         
-    # Calculate Total Leaves for Receipt (FIXED CRASH BUG)
     cursor.execute("SELECT SUM(days_count) as total_days FROM holiday_leaves WHERE telegram_id = %s", (tg_id,))
     sum_row = cursor.fetchone()
     total_days = sum_row['total_days'] if sum_row and sum_row['total_days'] else latest['days_count']
@@ -371,11 +382,11 @@ def show_latest_receipt(message):
     
     receipt = (
         "- Application receipt 🧾\n\n"
-        f"Applicant Name: {user_data['fb_name']}\n"
-        f"✓Unique ID: {user_data['unique_id']}\n"
-        f"✓Holiday end date: {latest['end_date'].strftime('%d/%m/%Y')}\n"
-        f"✓Number of holidays: {latest['days_count']}\n"
-        f"✓The Total number of holidays, including all previous holidays, is: {total_days}\n"
+        f"✓আবেদনকারীর নাম: {user_data['fb_name']}\n"
+        f"✓ইউনিক আইডি: {user_data['unique_id']}\n"
+        f"✓ছুটি শেষ হওয়ার তারিখ: {latest['end_date'].strftime('%d/%m/%Y')}\n"
+        f"✓ছুটির দিন সংখ্যা: {latest['days_count']}\n"
+        f"✓পূর্ববর্তী সকল ছুটি সহ মোট ছুটির সংখ্যা হলো: {total_days}\n"
         f"✓Team: {t_disp}"
     )
     bot.send_message(message.chat.id, receipt, reply_markup=get_main_keyboard(tg_id))
@@ -478,7 +489,8 @@ def handle_admin_callbacks(call):
         
         bot.edit_message_text(f"All leave data for the {cat} has been deleted Successfully✅", call.message.chat.id, call.message.message_id)
 
-# 🔥 পার্মানেন্ট অ্যান্টি-স্প্যাম সিস্টেম (সুপারফাস্ট) 🔥
+
+# 🔥 পার্মানেন্ট অ্যান্টি-স্প্যাম সিস্টেম 🔥
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
     t.daemon = True
@@ -494,7 +506,6 @@ if __name__ == "__main__":
         
     while True:
         try:
-            # timeout ফাংশনটি সরিয়ে দিয়েছি, এখন বট সুপারফাস্ট কাজ করবে!
             bot.infinity_polling(skip_pending=True)
         except telebot.apihelper.ApiTelegramException as e:
             time.sleep(5)
